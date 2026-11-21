@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { saveLocalSession } from "@/lib/local-sessions";
 import { database } from "@/lib/db";
 import { documentsSchema, effectSchema, languageSchema, planSchema } from "@/lib/llm/schemas";
 import { summarySchema } from "@/lib/llm/summary";
@@ -34,10 +35,19 @@ const payload = documentsSchema.extend({
 });
 
 export async function POST(request: Request) {
-  const db = database();
-  if (!db) return Response.json({ saved: false }, { status: 503 });
   const session = payload.safeParse(await request.json().catch(() => null));
   if (!session.success) return Response.json({ saved: false }, { status: 400 });
+  if (process.env.CERMIN_SESSION_STORAGE === "local" && !process.env.VERCEL) {
+    try {
+      await saveLocalSession(session.data);
+      return Response.json({ saved: true });
+    } catch (error) {
+      console.warn("Could not save local session:", (error as NodeJS.ErrnoException).code);
+      return Response.json({ saved: false }, { status: 500 });
+    }
+  }
+  const db = database();
+  if (!db) return Response.json({ saved: false }, { status: 503 });
   const { error } = await db.rpc("save_cermin_session", { p: session.data });
   if (error) {
     console.warn("Could not save session:", error.code);

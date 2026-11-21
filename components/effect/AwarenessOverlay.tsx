@@ -12,6 +12,7 @@ export function AwarenessOverlay({ level, preference, lastEvent }: {
   const display = preference === "gentle" ? Math.min(2, level) : level;
   return <>
     <div className="awareness-vignette" data-level={display} aria-hidden />
+    <div className="awareness-vignette awareness-vignette-edge" data-level={display} aria-hidden />
     {display === 0 && lastEvent?.level === 0 && <div className="awareness-recovery" key={lastEvent.time} aria-hidden />}
   </>;
 }

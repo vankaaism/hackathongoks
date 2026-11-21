@@ -13,3 +13,5 @@ graphify-out/
 cermin-agent-pack/assets/reference/
 cermin-agent-pack/skills/
 .vercel/
+
+.cermin-local/

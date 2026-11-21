@@ -3,12 +3,46 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "./ui/button";
-import { flagKey } from "@/lib/analyzers/heuristics";
-import { useSession, type PreparedSession } from "@/lib/store";
-import { finalScore } from "@/lib/scoring";
+import { flagKey, flagLabels, type Category, type Flag } from "@/lib/analyzers/heuristics";
+import { useSession, type PreparedSession, type Turn } from "@/lib/store";
+import { demoDeduction, demoFinalScore, finalScore } from "@/lib/scoring";
 import { practiceSummary, summarySchema, type Summary } from "@/lib/llm/summary";
 
-type Result = { summary: Summary; score: number; saved: boolean | null };
+const categories: Category[] = ["Fluency", "Clarity", "Evidence", "Consistency", "Composure"];
+const labels: Partial<Record<Flag["type"], string>> = {
+  filler: "Kata pengisi", long_pause: "Jeda panjang", restart: "Pengulangan awal",
+  off_topic: "Keluar topik", vague_claim: "Klaim kurang spesifik", cv_contradiction: "Perbedaan dengan CV",
+  rate_spike: "Lonjakan tempo", hedging: "Ungkapan ragu",
+};
+
+type Result = { summary: Summary; score: number; saved: boolean | null; flags: Flag[]; turns: Turn[] };
+
+function DemoEvidence({ flags, turns }: { flags: Flag[]; turns: Turn[] }) {
+  const total = flags.reduce((sum, flag) => sum + demoDeduction(flag.weight), 0);
+  return <div className="summary-evidence">
+    <h3>Rincian skor</h3>
+    <p>{flags.length} temuan dalam {turns.filter(turn => turn.words.length).length} jawaban. Skor dimulai dari 100 dan dikurangi {total} poin.</p>
+    <p className="muted">Temuan ringan −1,5 poin, sedang −4 poin, dan berat −6 poin.</p>
+    <ul>{categories.map(category => {
+      const findings = flags.filter(flag => flag.category === category);
+      const points = findings.reduce((sum, flag) => sum + demoDeduction(flag.weight), 0);
+      const types = [...new Set(findings.map(flag => flag.type))];
+      const sample = [...findings].sort((a, b) => b.weight - a.weight)[0];
+      const words = sample && turns.find(turn => turn.question === sample.question)?.words;
+      const quote = sample && sample.startWord >= 0 && sample.type !== "long_pause"
+        ? words?.slice(sample.startWord, sample.endWord + 1).map(word => word.text).join(" ") : null;
+      const seconds = sample ? Math.floor(sample.endMs / 1000) : 0;
+      return <li key={category}>
+        <div><strong>{category}</strong><span>{findings.length} temuan · −{points.toLocaleString("id-ID")}</span></div>
+        {types.length > 0 && <p>{types.map(type => `${findings.filter(flag => flag.type === type).length} ${(labels[type] ?? flagLabels[type]).toLowerCase()}`).join(" · ")}</p>}
+        {sample && <p className="muted">
+          <time>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</time>
+          {" · "}{quote && <>“{quote}” — </>}{sample.explanation}
+        </p>}
+      </li>;
+    })}</ul>
+  </div>;
+}
 
 export function SessionSummary({ session, pending, replay = false }: { session: PreparedSession; pending: number; replay?: boolean }) {
   const [result, setResult] = useState<Result>();
@@ -27,7 +61,8 @@ export function SessionSummary({ session, pending, replay = false }: { session: 
       const state = useSession.getState();
       const spokenMs = state.turns.reduce((sum, turn) =>
         sum + Math.max(0, (turn.words.at(-1)?.endMs ?? 0) - (turn.words[0]?.startMs ?? 0)), 0);
-      const score = finalScore(state.flags, spokenMs);
+      const score = replay ? demoFinalScore(state.flags) : finalScore(state.flags, spokenMs);
+      const evidence = { flags: state.flags, turns: state.turns };
       const ranked = [...state.flags].sort((a, b) => (b.severity ?? b.weight) - (a.severity ?? a.weight));
       const counts = ranked.reduce<Record<string, number>>((acc, flag) => {
         acc[flag.category] = (acc[flag.category] ?? 0) + 1; return acc;
@@ -51,7 +86,7 @@ export function SessionSummary({ session, pending, replay = false }: { session: 
         } catch { /* Local feedback remains available. */ }
       }
       if (controller.signal.aborted) return;
-      setResult({ summary, score, saved: null });
+      setResult({ ...evidence, summary, score, saved: null });
       if (replay || !state.turns.some(turn => turn.words.length > 0)) return;
       try {
         const response = await fetch("/api/session", {
@@ -73,9 +108,9 @@ export function SessionSummary({ session, pending, replay = false }: { session: 
             scores: state.scores, effects: state.effects, marks: state.marks,
           }),
         });
-        if (!controller.signal.aborted) setResult({ summary, score, saved: response.ok });
+        if (!controller.signal.aborted) setResult({ ...evidence, summary, score, saved: response.ok });
       } catch {
-        if (!controller.signal.aborted) setResult({ summary, score, saved: false });
+        if (!controller.signal.aborted) setResult({ ...evidence, summary, score, saved: false });
       }
     }
     void generate();
@@ -83,21 +118,27 @@ export function SessionSummary({ session, pending, replay = false }: { session: 
   }, [pending, replay, session]);
 
   return <>
-    {!open && <Button className="primary summary-trigger" onClick={() => setOpen(true)}>Session summary</Button>}
+    {!open && <Button className="primary summary-trigger" onClick={() => setOpen(true)}>{replay ? "Ringkasan sesi" : "Session summary"}</Button>}
     <dialog ref={panel} className="summary-dialog" onClose={() => setOpen(false)}>
       <div className="summary-header">
-        <h2>Session summary</h2>
-        <Button onClick={() => setOpen(false)}>Close</Button>
+        <h2>{replay ? "Ringkasan sesi" : "Session summary"}</h2>
+        <Button onClick={() => setOpen(false)}>{replay ? "Tutup" : "Close"}</Button>
       </div>
       {result ? <>
         <p className="result-score"><strong>{result.score}</strong> / 100</p>
+        {replay ? <>
+          <DemoEvidence flags={result.flags} turns={result.turns}/>
+          <h3>Bukti yang sudah kuat</h3>
+          <p>Di jawaban ketiga, Rania menyebut hasil yang bisa dibayangkan: “jumlah laporan stok yang hilang turun 25 persen.”</p>
+        </> : <>
         <h3>Strength</h3><p>{result.summary.strength}</p>
         <h3>Areas to practice</h3>
         <ul>{result.summary.top_weaknesses.map((item, i) => <li key={i}><strong>{item.category}</strong> · {item.evidence}</li>)}</ul>
         <h3>Next steps</h3>
         <ol>{result.summary.recommendations.map((item, i) => <li key={i}>{item}</li>)}</ol>
+        </>}
         {result.saved !== null && <p className="muted">{result.saved ? "Session saved." : "Session could not be saved."}</p>}
-        <Link className="preview-link" href="/">Start another practice session</Link>
+        <Link className="preview-link" href="/">{replay ? "Mulai sesi latihan" : "Start another practice session"}</Link>
       </> : <p role="status">Preparing your feedback…</p>}
     </dialog>
   </>;

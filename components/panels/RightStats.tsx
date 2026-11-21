@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Activity } from "lucide-react";
 import { Area, CartesianGrid, ComposedChart, ReferenceLine, ResponsiveContainer, Scatter, XAxis, YAxis } from "recharts";
 import { useSession } from "@/lib/store";
 import { flagKey, flagLabels, type Flag } from "@/lib/analyzers/heuristics";
-import { liveScore } from "@/lib/scoring";
+import { demoDeduction, demoFinalScore, liveScore } from "@/lib/scoring";
 
 const severity = ["#8bb8ec", "#e4b87a", "#fa978f"];
 
@@ -12,19 +12,30 @@ export function formatTime(ms: number) {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
-export function RightStats({ live, effectsEnabled, selected, select }: { live: boolean; effectsEnabled: boolean; selected?: Flag; select: (flag: Flag) => void }) {
+export function RightStats({ live, replayClock, selected, select }: { live: boolean; replayClock?: number; selected?: Flag; select: (flag: Flag) => void }) {
   const { scores, liveFlags, flags, effects, turns, current } = useSession();
   const [tab, setTab] = useState<"Live" | "Review" | "Details">("Live");
   const entries = [...flags, ...liveFlags].sort((a, b) => a.endMs - b.endMs);
-  const lastEffect = effects.at(-1);
-  const points = [
-    ...entries.map(flag => ({ time: flag.endMs, score: liveScore(entries, flag.endMs), color: severity[(flag.severity ?? flag.weight) - 1] })),
-    ...effects.filter(event => event.level === 0).map(event => ({ time: event.time, score: liveScore(entries, event.time), color: "#a8d77f" })),
-  ];
+  const chartGradient = useId();
+  const replay = replayClock !== undefined;
+  const scoreAt = (time: number) => replay
+    ? demoFinalScore(entries.filter(flag => flag.endMs <= time))
+    : liveScore(entries, time);
   const selectedIndex = selected ? entries.findIndex(flag => flagKey(flag) === flagKey(selected)) : -1;
   const shown = selectedIndex >= 0 ? entries[selectedIndex] : entries.at(-1);
-  const latestTime = Math.max(scores.at(-1)?.time ?? 0, ...points.map(point => point.time));
-  const chartData = scores.length > 0 ? scores : [{ time: 0, score: 100 }];
+  const recoveryTimes = effects.filter(event => event.level === 0).map(event => event.time);
+  const latestTime = Math.max(replayClock ?? scores.at(-1)?.time ?? 0, ...entries.map(flag => flag.endMs), ...recoveryTimes);
+  const eventTimes = [...new Set(entries.map(flag => flag.endMs))];
+  const leadingEdges = eventTimes.map((time, i) => Math.max(eventTimes[i - 1] ?? 0, time - 650));
+  const timeline = [...new Set([0, latestTime, ...eventTimes, ...leadingEdges, ...recoveryTimes])].sort((a, b) => a - b);
+  const chartData = timeline.map(time => ({ time, score: scoreAt(time) }));
+  const points = [
+    ...entries.map(flag => ({
+      time: flag.endMs, score: scoreAt(flag.endMs), color: severity[(flag.severity ?? flag.weight) - 1],
+      flag, active: selected && flagKey(flag) === flagKey(selected),
+    })),
+    ...recoveryTimes.map(time => ({ time, score: scoreAt(time), color: "#34866f" })),
+  ];
   const allTurns = current ? [...turns, current] : turns;
   const words = allTurns.flatMap(turn => turn.words);
   const spokenMs = allTurns.reduce((sum, turn) => sum + Math.max(0, (turn.words.at(-1)?.endMs ?? 0) - (turn.words[0]?.startMs ?? 0)), 0);
@@ -37,16 +48,27 @@ export function RightStats({ live, effectsEnabled, selected, select }: { live: b
       <div className="review-tabs" aria-label="Performance view">
         {(["Live", "Review", "Details"] as const).map(item => <button type="button" key={item} aria-pressed={tab === item} onClick={() => setTab(item)}>{item}</button>)}
       </div>
-      <div className="score-title"><h3>Interview score</h3><strong>{scores.at(-1)?.score ?? "—"}</strong></div>
-      <div className="performance-chart" data-pulse={effectsEnabled && lastEffect?.level === 1 && live} aria-label="Interview score over time">
+      <div className="score-title"><h3>Interview score</h3><strong>{scoreAt(latestTime)}</strong></div>
+      <div className="performance-chart" aria-label="Interview score over time">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <ComposedChart data={chartData} margin={{ left: -24, right: 16, top: 8, bottom: 0 }}>
-            <CartesianGrid stroke="#413d33" vertical={false}/>
-            <XAxis type="number" dataKey="time" domain={[0, Math.max(10_000, latestTime)]} tickFormatter={formatTime} tick={{ fill: "#b9b0a0", fontSize: 10 }} tickCount={4}/>
-            <YAxis type="number" dataKey="score" domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fill: "#b9b0a0", fontSize: 10 }}/>
-            <Area type="monotone" dataKey="score" stroke="#a9c988" fill="#495838" isAnimationActive={false}/>
-            {live && latestTime > 0 && <ReferenceLine x={latestTime} stroke="#d2d2b3" strokeDasharray="3 3"/>}
-            <Scatter data={points} isAnimationActive={false} shape={({ cx, cy, payload }) => <circle className="chart-dot" cx={cx} cy={cy} r={4} fill={payload.color}/>}/>
+          <ComposedChart data={chartData} margin={{ left: -27, right: 12, top: 10, bottom: 0 }}>
+            <defs><linearGradient id={chartGradient} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#65b9a2" stopOpacity={.3}/>
+              <stop offset="100%" stopColor="#65b9a2" stopOpacity={.045}/>
+            </linearGradient></defs>
+            <CartesianGrid stroke="#dce4f0" strokeDasharray="3 4" vertical={false}/>
+            <XAxis type="number" dataKey="time" domain={[0, Math.max(replay ? 90_000 : 10_000, latestTime)]}
+              tickFormatter={formatTime} axisLine={false} tickLine={false} tickMargin={6} tick={{ fill: "#53637d", fontSize: 10 }} tickCount={4}/>
+            <YAxis type="number" dataKey="score" domain={[0, 100]} ticks={[0, 50, 100]}
+              axisLine={false} tickLine={false} tickMargin={5} tick={{ fill: "#53637d", fontSize: 10 }}/>
+            <Area type="linear" dataKey="score" stroke="#257661" strokeWidth={2}
+              fill={`url(#${chartGradient})`} isAnimationActive={false}/>
+            {live && latestTime > 0 && <ReferenceLine x={latestTime} stroke="#7388a7" strokeDasharray="3 4"/>}
+            <Scatter data={points} isAnimationActive={false} shape={({ cx, cy, payload }) =>
+              <circle className="chart-dot" cx={cx} cy={cy} r={payload.active ? 5.5 : 3.6} fill={payload.color}
+                stroke={payload.active ? "#263c68" : "#fff"} strokeWidth={1.5}
+                style={{ cursor: payload.flag ? "pointer" : undefined }}
+                onClick={() => { if (payload.flag) select(payload.flag); }}/>}/>
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -58,12 +80,12 @@ export function RightStats({ live, effectsEnabled, selected, select }: { live: b
           <div><dt>Average logged pause</dt><dd>{pauses.length ? (pauses.reduce((sum, flag) => sum + flag.endMs - flag.startMs, 0) / pauses.length / 1000).toFixed(1) : "—"} s</dd></div>
           <div><dt>Flags / answer</dt><dd>{turns.length ? (flags.length / turns.length).toFixed(1) : "—"}</dd></div>
         </dl>
-        <p className="muted">The live score subtracts four points per flag weight. Each penalty halves after one minute.</p>
+        <p className="muted">{replay ? "Skor demo dimulai dari 100. Potongan ringan 1,5, sedang 4, dan berat 6 poin." : "The live score subtracts four points per flag weight. Each penalty halves after one minute."}</p>
       </> : <>
         {shown && <article className="feedback-card">
           <strong>{flagLabels[shown.type]}</strong>
           <p>{shown.explanation}</p>
-          <span className="muted">−{shown.weight * 4} live points</span>
+          <span className="muted">−{replay ? demoDeduction(shown.weight).toLocaleString("id-ID") : shown.weight * 4} {replay ? "poin" : "live points"}</span>
           {tab === "Review" && <button type="button" disabled={selectedIndex === entries.length - 1} onClick={() => select(entries[selectedIndex + 1])}>Next</button>}
         </article>}
         <h3>Session events</h3>

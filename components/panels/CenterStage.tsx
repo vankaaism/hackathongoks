@@ -1,7 +1,7 @@
 import { Mic, Play, Square, RotateCcw, SkipForward } from "lucide-react";
-import { AwarenessMessage } from "@/components/effect/AwarenessOverlay";
+import { AwarenessMessage, AwarenessOverlay } from "@/components/effect/AwarenessOverlay";
 import { useEffect, useState } from "react";
-import { Interviewer, type Expression } from "@/components/character/Interviewer";
+import { Interviewer } from "@/components/character/Interviewer";
 import { useSession } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { interview } from "@/lib/config";
@@ -26,13 +26,8 @@ export function CenterStage({ question, session, audio }: {
     return () => clearTimeout(timer);
   }, [explaining]);
   const cause = useSession(state => state.liveFlags.at(-1) ?? state.flags.at(-1));
+  const lastEffect = useSession(state => state.effects.at(-1));
   const awareness = useSession(state => state.composure.level);
-  const skeptical = useSession(state => state.flags.some(flag => flag.question === (phase === "complete" ? index : index - 1) && ["cv_contradiction", "vague_claim"].includes(flag.type)));
-  const expression: Expression = phase === "playing" ? "speaking"
-    : session?.effect !== "off" && awareness >= 2 ? "concerned"
-    : phase === "finishing" ? "thinking"
-    : skeptical && !["listening", "connecting"].includes(phase) ? "skeptical"
-    : phase === "complete" ? "positive" : "idle";
   const visibleQuestion = phase === "playing" ? question.slice(0, playback.characters) : question;
   const label = { ready: "Start interview", playing: "Playing question", answer: "Start answering", connecting: "Connecting microphone", listening: "Finish answer", finishing: "Finishing answer", breathing: "Continue interview", complete: "Interview complete" }[phase];
   const canAct = !!session && ["ready", "answer", "listening", "breathing"].includes(phase);
@@ -40,17 +35,15 @@ export function CenterStage({ question, session, audio }: {
 
   return <section className="stage" aria-label="Interviewer">
     <div className="room">
-      <div className="window" aria-hidden />
-      <div className="lamp" aria-hidden />
-      <Interviewer expression={expression} amplitude={playback.amplitude}/>
-      {phase === "ready" && session && <p className="scene-caption">{session.plan.scene_caption}</p>}
+      {session && phase !== "complete" && <AwarenessOverlay level={awareness} preference={session.effect} lastEvent={lastEffect}/>}
+      <Interviewer speaking={phase === "playing"} amplitude={playback.amplitude}/>
+      </div>
       <div className="dialogue">
         <p className="speaker">Ms. Alina <span>{session ? `HR Lead, ${session.company}` : "HR Lead"}</span></p>
         <p aria-label={phase === "playing" ? question : undefined}>
           {phase === "complete" ? session?.plan.closing : <span aria-hidden={phase === "playing"}>{visibleQuestion}</span>}
         </p>
       </div>
-    </div>
     {error && <p role="alert" className="muted px-2 pt-2">{error}</p>}
     <div className="controls">
       <span>Question {index + 1} of {interview.questions}</span>

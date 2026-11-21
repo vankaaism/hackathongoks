@@ -15,3 +15,11 @@ export function finalScore(flags: Flag[], spokenMs: number) {
   const weight = flags.reduce((sum, flag) => sum + flag.weight, 0);
   return bounded(weight * interview.finalPenaltyMultiplier / (spokenMs / 60_000));
 }
+
+export function demoDeduction(weight: number) {
+  return weight === 1 ? 1.5 : weight * 2;
+}
+
+export function demoFinalScore(flags: Flag[]) {
+  return bounded(flags.reduce((total, flag) => total + demoDeduction(flag.weight), 0));
+}
