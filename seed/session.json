@@ -1,0 +1,41 @@
+{
+  "durationMs": 90000,
+  "company": "Nusantara Foods",
+  "scene": "Pagi hari di ruang wawancara.",
+  "closing": "Terima kasih, Rania. Silakan tinjau hasil latihan Anda.",
+  "turns": [
+    {
+      "question": "Ceritakan sedikit tentang diri dan pengalaman Anda.",
+      "focus": "Perkenalan singkat yang relevan dengan posisi.",
+      "promptStart": 0,
+      "promptEnd": 3500,
+      "chunks": [
+        { "at": 5000, "interval": 410, "text": "Emm saya emm mahasiswa manajemen dan eee saya pernah magang di koperasi kampus." },
+        { "at": 14600, "interval": 390, "text": "Saat magang, saya membantu membuat laporan stok mingguan untuk empat toko." },
+        { "at": 19000, "interval": 430, "text": "Saya ingin belajar bagaimana operasi ritel berjalan dalam skala lebih besar." }
+      ]
+    },
+    {
+      "question": "Kapan Anda mulai magang di koperasi kampus?",
+      "focus": "Tanggal yang konsisten dengan CV.",
+      "promptStart": 26800,
+      "promptEnd": 30900,
+      "chunks": [
+        { "at": 32200, "interval": 455, "text": "Saya mulai magang pada Februari 2022 dan menyelesaikan program pada bulan Juli." },
+        { "at": 37800, "interval": 405, "text": "Saya bertugas memeriksa laporan yang masuk setiap minggu dan menanyakan data yang belum lengkap." }
+      ]
+    },
+    {
+      "question": "Bagaimana Anda menjelaskan selisih stok kepada kepala toko?",
+      "focus": "Langkah yang konkret dan dapat diikuti.",
+      "promptStart": 53000,
+      "promptEnd": 57900,
+      "chunks": [
+        { "at": 59000, "interval": 475, "text": "Saya akan mulai dengan menunjukkan produk mana yang selisihnya paling besar." },
+        { "at": 64800, "interval": 430, "text": "Kemudian saya akan membandingkan catatan penerimaan, penjualan, dan hasil hitung fisik." },
+        { "at": 71000, "interval": 480, "text": "Dalam magang saya menggunakan pendekatan tersebut dan jumlah laporan stok yang hilang turun 25 persen." },
+        { "at": 80600, "interval": 520, "text": "Setelah penyebabnya jelas, saya akan meminta kepala toko menyepakati satu tindakan dan jadwal pengecekan." }
+      ]
+    }
+  ]
+}
